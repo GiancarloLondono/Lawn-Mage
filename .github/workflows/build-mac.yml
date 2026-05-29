@@ -1,7 +1,7 @@
 name: Build macOS App
 
 on:
-  workflow_dispatch:  # run manually from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   build-macos:
@@ -11,42 +11,66 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Processing 4
+      - name: Download latest Processing 4
         run: |
-          curl -L "https://github.com/processing/processing4/releases/download/processing-1293-4.3/processing-4.3-macos-x86_64.zip" -o processing.zip
+          # Fetch the latest release download URL from GitHub API
+          RELEASE_URL=$(curl -s https://api.github.com/repos/processing/processing4/releases/latest \
+            | grep "browser_download_url" \
+            | grep "macos-x86_64.zip" \
+            | cut -d '"' -f 4)
+          
+          echo "Downloading: $RELEASE_URL"
+          curl -L "$RELEASE_URL" -o processing.zip
           unzip -q processing.zip
+          echo "Contents after unzip:"
           ls -la
 
-      - name: Find processing-java
+      - name: Install Processing Sound library
         run: |
-          find . -name "processing-java" 2>/dev/null || true
-          find . -name "*.app" -maxdepth 3 2>/dev/null || true
+          # Find Processing app
+          PROC_APP=$(find . -name "Processing.app" -maxdepth 3 | head -1)
+          echo "Processing app: $PROC_APP"
+          
+          # Create libraries folder
+          SKETCH_FOLDER="$HOME/Documents/Processing"
+          mkdir -p "$SKETCH_FOLDER/libraries"
+          
+          # Download Sound library
+          curl -L "https://github.com/processing/processing-sound/releases/download/latest/sound.zip" \
+            -o sound.zip 2>/dev/null || \
+          curl -L "https://download.processing.org/contributions/sound.zip" \
+            -o sound.zip
+          
+          unzip -q sound.zip -d "$SKETCH_FOLDER/libraries/" 2>/dev/null || true
+          echo "Libraries:"
+          ls "$SKETCH_FOLDER/libraries/" 2>/dev/null || echo "none"
 
       - name: Export sketch for macOS
         run: |
-          # Make processing-java executable
-          chmod +x Processing.app/Contents/MacOS/processing-java 2>/dev/null || \
-          chmod +x processing-4.3/processing-java 2>/dev/null || \
-          find . -name "processing-java" -exec chmod +x {} \;
-          
+          # Find processing-java
           PJAVA=$(find . -name "processing-java" | head -1)
-          echo "Found processing-java at: $PJAVA"
-          
-          # Export for macOS
+          chmod +x "$PJAVA"
+          echo "Using: $PJAVA"
+
           "$PJAVA" \
             --force \
             --sketch="$(pwd)/Lawn_Mage_Gameplay" \
             --output="$(pwd)/export_output" \
             --export
+          
+          echo "Export output:"
+          ls export_output/ 2>/dev/null || echo "empty"
 
       - name: Zip macOS export
         run: |
           cd export_output
           ls -la
-          zip -r ../Lawn_Mage_macOS.zip macosx/ 2>/dev/null || \
-          zip -r ../Lawn_Mage_macOS.zip . 
+          # Find the macos folder (name may vary)
+          MACOS_DIR=$(ls -d */ | grep -i mac | head -1)
+          echo "macOS folder: $MACOS_DIR"
+          zip -r ../Lawn_Mage_macOS.zip "${MACOS_DIR:-.}"
 
-      - name: Upload macOS build as artifact
+      - name: Upload macOS build
         uses: actions/upload-artifact@v4
         with:
           name: Lawn_Mage_macOS

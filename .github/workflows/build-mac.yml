@@ -1,0 +1,54 @@
+name: Build macOS App
+
+on:
+  workflow_dispatch:  # run manually from GitHub Actions tab
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Processing 4
+        run: |
+          curl -L "https://github.com/processing/processing4/releases/download/processing-1293-4.3/processing-4.3-macos-x86_64.zip" -o processing.zip
+          unzip -q processing.zip
+          ls -la
+
+      - name: Find processing-java
+        run: |
+          find . -name "processing-java" 2>/dev/null || true
+          find . -name "*.app" -maxdepth 3 2>/dev/null || true
+
+      - name: Export sketch for macOS
+        run: |
+          # Make processing-java executable
+          chmod +x Processing.app/Contents/MacOS/processing-java 2>/dev/null || \
+          chmod +x processing-4.3/processing-java 2>/dev/null || \
+          find . -name "processing-java" -exec chmod +x {} \;
+          
+          PJAVA=$(find . -name "processing-java" | head -1)
+          echo "Found processing-java at: $PJAVA"
+          
+          # Export for macOS
+          "$PJAVA" \
+            --force \
+            --sketch="$(pwd)/Lawn_Mage_Gameplay" \
+            --output="$(pwd)/export_output" \
+            --export
+
+      - name: Zip macOS export
+        run: |
+          cd export_output
+          ls -la
+          zip -r ../Lawn_Mage_macOS.zip macosx/ 2>/dev/null || \
+          zip -r ../Lawn_Mage_macOS.zip . 
+
+      - name: Upload macOS build as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lawn_Mage_macOS
+          path: Lawn_Mage_macOS.zip
+          retention-days: 30

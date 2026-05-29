@@ -13,60 +13,27 @@ jobs:
 
       - name: Download Processing 4
         run: |
-          # Use GitHub token to avoid rate limits
-          ASSET_URL=$(curl -s \
-            -H "Authorization: Bearer ${{ github.token }}" \
-            "https://api.github.com/repos/processing/processing4/releases/latest" \
-            | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          for asset in data.get('assets', []):
-              name = asset['browser_download_url']
-              if 'macos' in name.lower() and name.endswith('.zip') and 'x86' in name.lower():
-                  print(name)
-                  break
-          ")
-          
-          echo "Download URL: $ASSET_URL"
-          
-          if [ -z "$ASSET_URL" ]; then
-            echo "ERROR: Could not find macOS zip asset"
-            echo "Available assets:"
-            curl -s \
-              -H "Authorization: Bearer ${{ github.token }}" \
-              "https://api.github.com/repos/processing/processing4/releases/latest" \
-              | python3 -c "import sys,json; [print(a['browser_download_url']) for a in json.load(sys.stdin).get('assets',[])]"
-            exit 1
-          fi
-          
-          curl -L "$ASSET_URL" -o processing.zip
+          curl -L "https://github.com/processing/processing4/releases/download/processing-1313-4.5.2/processing-4.5.2-macos-x64-portable.zip" -o processing.zip
           unzip -q processing.zip
-          echo "=== Unzipped contents ==="
+          echo "=== Contents ==="
           ls -la
 
-      - name: Find processing-java and export
+      - name: Export sketch for macOS
         run: |
           PJAVA=$(find . -name "processing-java" 2>/dev/null | head -1)
           echo "Found: $PJAVA"
-          
-          if [ -z "$PJAVA" ]; then
-            echo "processing-java not found, checking all files:"
-            find . -maxdepth 5 -type f -name "processing*" 2>/dev/null
-            exit 1
-          fi
-          
           chmod +x "$PJAVA"
-          
+
           "$PJAVA" \
             --force \
             --sketch="$(pwd)/Lawn_Mage_Gameplay" \
             --output="$(pwd)/export_output" \
             --export
-          
+
           echo "=== Export output ==="
           ls export_output/
 
-      - name: Zip and upload
+      - name: Zip export
         run: |
           cd export_output
           zip -r ../Lawn_Mage_macOS.zip .

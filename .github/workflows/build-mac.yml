@@ -11,32 +11,50 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Processing 4.5.3
+      - name: Download Processing 4
         run: |
-          curl -L "https://github.com/processing/processing4/releases/download/processing-1314-4.5.3/processing-4.5.3-macos-x86_64.zip" -o processing.zip
+          # Use GitHub token to avoid rate limits
+          ASSET_URL=$(curl -s \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            "https://api.github.com/repos/processing/processing4/releases/latest" \
+            | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          for asset in data.get('assets', []):
+              name = asset['browser_download_url']
+              if 'macos' in name.lower() and name.endswith('.zip') and 'x86' in name.lower():
+                  print(name)
+                  break
+          ")
+          
+          echo "Download URL: $ASSET_URL"
+          
+          if [ -z "$ASSET_URL" ]; then
+            echo "ERROR: Could not find macOS zip asset"
+            echo "Available assets:"
+            curl -s \
+              -H "Authorization: Bearer ${{ github.token }}" \
+              "https://api.github.com/repos/processing/processing4/releases/latest" \
+              | python3 -c "import sys,json; [print(a['browser_download_url']) for a in json.load(sys.stdin).get('assets',[])]"
+            exit 1
+          fi
+          
+          curl -L "$ASSET_URL" -o processing.zip
           unzip -q processing.zip
-          echo "=== Contents ==="
+          echo "=== Unzipped contents ==="
           ls -la
 
-      - name: Install Processing Sound library
+      - name: Find processing-java and export
         run: |
-          mkdir -p "$HOME/Documents/Processing/libraries"
-          # Try official Sound library download
-          curl -L "https://github.com/processing/processing-sound/releases/latest/download/sound.zip" \
-            -o sound.zip --fail 2>/dev/null || \
-          curl -L "https://download.processing.org/contributions/sound.zip" \
-            -o sound.zip --fail 2>/dev/null || \
-          echo "Sound lib download skipped — may already be bundled"
+          PJAVA=$(find . -name "processing-java" 2>/dev/null | head -1)
+          echo "Found: $PJAVA"
           
-          if [ -f sound.zip ]; then
-            unzip -q sound.zip -d "$HOME/Documents/Processing/libraries/"
-            echo "Sound library installed"
+          if [ -z "$PJAVA" ]; then
+            echo "processing-java not found, checking all files:"
+            find . -maxdepth 5 -type f -name "processing*" 2>/dev/null
+            exit 1
           fi
-
-      - name: Export sketch for macOS
-        run: |
-          PJAVA=$(find . -name "processing-java" | head -1)
-          echo "processing-java: $PJAVA"
+          
           chmod +x "$PJAVA"
           
           "$PJAVA" \
@@ -48,12 +66,10 @@ jobs:
           echo "=== Export output ==="
           ls export_output/
 
-      - name: Zip macOS export
+      - name: Zip and upload
         run: |
           cd export_output
-          MACOS_DIR=$(ls -d */ | grep -i mac | head -1)
-          echo "Zipping: $MACOS_DIR"
-          zip -r ../Lawn_Mage_macOS.zip "$MACOS_DIR"
+          zip -r ../Lawn_Mage_macOS.zip .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

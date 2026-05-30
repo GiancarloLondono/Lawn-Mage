@@ -11,32 +11,74 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Processing 4
+      - name: Download Processing 4.5.2
         run: |
           curl -L "https://github.com/processing/processing4/releases/download/processing-1313-4.5.2/processing-4.5.2-macos-x64-portable.zip" -o processing.zip
           unzip -q processing.zip
-          echo "=== Contents ==="
+          echo "=== Top level ==="
           ls -la
+          echo "=== Finding processing-java ==="
+          find . -name "processing-java" 2>/dev/null
 
-      - name: Export sketch for macOS
+      - name: Install Sound library
         run: |
-          PJAVA=$(find . -name "processing-java" 2>/dev/null | head -1)
-          echo "Found: $PJAVA"
-          chmod +x "$PJAVA"
+          SKETCHBOOK="$HOME/Documents/Processing/libraries"
+          mkdir -p "$SKETCHBOOK"
+          # Download Sound library from Processing's contribution manager
+          curl -L "https://github.com/processing/processing-sound/releases/latest/download/sound.zip" \
+            -o sound.zip --fail 2>/dev/null \
+          || curl -L "https://github.com/processing/processing-sound/releases/download/v2.4.0/sound.zip" \
+            -o sound.zip --fail 2>/dev/null \
+          || echo "Skipping sound lib download"
+          
+          if [ -f sound.zip ]; then
+            unzip -q sound.zip -d "$SKETCHBOOK/"
+            echo "Sound installed at $SKETCHBOOK"
+            ls "$SKETCHBOOK"
+          fi
 
-          "$PJAVA" \
+      - name: Export sketch (with virtual display)
+        run: |
+          # Install XQuartz for virtual display on macOS CI
+          # Use caffeinate to keep system awake
+          PJAVA=$(find . -name "processing-java" | head -1)
+          echo "Using: $PJAVA"
+          chmod +x "$PJAVA"
+          
+          # Set display and java options to avoid GUI requirement
+          export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"
+          
+          # Run export with timeout
+          timeout 120 "$PJAVA" \
             --force \
             --sketch="$(pwd)/Lawn_Mage_Gameplay" \
             --output="$(pwd)/export_output" \
-            --export
+            --export 2>&1 || true
+          
+          echo "=== Export result ==="
+          ls export_output/ 2>/dev/null || echo "Export folder empty or missing"
+          
+          # Check if any .app was created
+          find export_output -name "*.app" 2>/dev/null || echo "No .app found"
 
-          echo "=== Export output ==="
-          ls export_output/
+      - name: Debug if export failed
+        if: always()
+        run: |
+          echo "=== Full export_output tree ==="
+          find export_output 2>/dev/null || echo "No export_output folder"
+          echo "=== Processing log ==="
+          find . -name "*.log" 2>/dev/null | xargs cat 2>/dev/null || echo "No logs"
 
       - name: Zip export
         run: |
-          cd export_output
-          zip -r ../Lawn_Mage_macOS.zip .
+          if [ -d export_output ] && [ "$(ls -A export_output)" ]; then
+            cd export_output
+            zip -r ../Lawn_Mage_macOS.zip .
+            echo "Zip created successfully"
+          else
+            echo "ERROR: Nothing to zip"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
